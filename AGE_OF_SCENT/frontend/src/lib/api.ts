@@ -1,111 +1,56 @@
-import { getToken } from "@/lib/auth";
+const API_BASE_URL =
+    process.env.NEXT_PUBLIC_API_URL || "https://largefile.onrender.com";
 
-const RENDER_BACKEND_ORIGIN = "https://largefile.onrender.com";
+type RequestBody =
+    | Record<string, unknown>
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null
+    | FormData
+    | undefined;
 
-function normalizeBaseUrl(value?: string) {
-    const raw = (value || "").trim();
+async function request<T>(
+    path: string,
+    options: RequestInit = {}
+): Promise<T> {
+    const token =
+        typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-    if (!raw || raw.includes("api.example.com") || raw.includes("localhost")) {
-        return `${RENDER_BACKEND_ORIGIN}/api`;
-    }
-
-    const withoutTrailingSlash = raw.replace(/\/+$/, "");
-
-    if (withoutTrailingSlash.endsWith("/api")) {
-        return withoutTrailingSlash;
-    }
-
-    return `${withoutTrailingSlash}/api`;
-}
-
-export const API_BASE_URL = normalizeBaseUrl(
-    process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL
-);
-
-export const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "");
-
-type JsonBody = Record<string, unknown> | unknown[] | string | number | boolean | null;
-
-type RequestBody = BodyInit | JsonBody | undefined;
-
-type RequestOptions = Omit<RequestInit, "body"> & {
-    body?: RequestBody;
-};
-
-export function mediaUrl(path?: string) {
-    if (!path) return "";
-
-    if (path.startsWith("http://") || path.startsWith("https://")) {
-        return path;
-    }
-
-    if (path.startsWith("/")) {
-        return `${API_ORIGIN}${path}`;
-    }
-
-    return `${API_ORIGIN}/${path}`;
-}
-
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-    const cleanPath = path.startsWith("/") ? path : `/${path}`;
-    const requestUrl = `${API_BASE_URL}${cleanPath}`;
+    const url = `${API_BASE_URL.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
 
     const headers = new Headers(options.headers);
-    const isFormData =
-        typeof FormData !== "undefined" && options.body instanceof FormData;
 
-    let body: BodyInit | undefined;
-
-    if (isFormData) {
-        body = options.body as FormData;
-    } else if (options.body !== undefined && options.body !== null) {
+    if (!(options.body instanceof FormData)) {
         headers.set("Content-Type", "application/json");
-        body = JSON.stringify(options.body);
     }
-
-    const token = typeof window !== "undefined" ? getToken() : null;
 
     if (token) {
         headers.set("Authorization", `Bearer ${token}`);
     }
 
+    const response = await fetch(url, {
+        ...options,
+        headers,
+    });
+
+    const text = await response.text();
+
+    let data: unknown = null;
+
     try {
-        console.log("[AGE OF SCENT API]", options.method || "GET", requestUrl);
-
-        const response = await fetch(requestUrl, {
-            ...options,
-            method: options.method || "GET",
-            headers,
-            body,
-            mode: "cors",
-            cache: "no-store",
-        });
-
-        const data = await response.json().catch(() => null);
-
-        if (!response.ok) {
-            throw new Error(
-                data?.message ||
-                data?.error ||
-                `Request failed with status ${response.status}.`
-            );
-        }
-
-        return data as T;
-    } catch (error) {
-        console.error("[AGE OF SCENT API ERROR]", {
-            url: requestUrl,
-            error,
-        });
-
-        if (error instanceof Error) {
-            throw new Error(error.message);
-        }
-
-        throw new Error(
-            `Failed to connect to backend at ${requestUrl}. Check Render CORS_ORIGIN and Vercel NEXT_PUBLIC_API_URL.`
-        );
+        data = text ? JSON.parse(text) : null;
+    } catch {
+        data = text;
     }
+
+    if (!response.ok) {
+        const errorData = data as { message?: string; error?: string };
+        throw new Error(errorData?.message || errorData?.error || "Request failed");
+    }
+
+    return data as T;
 }
 
 export const api = {
@@ -118,21 +63,24 @@ export const api = {
     post: <T>(path: string, body?: RequestBody): Promise<T> => {
         return request<T>(path, {
             method: "POST",
-            body,
+            body:
+                body instanceof FormData
+                    ? body
+                    : body !== undefined
+                        ? JSON.stringify(body)
+                        : undefined,
         });
     },
 
     put: <T>(path: string, body?: RequestBody): Promise<T> => {
         return request<T>(path, {
             method: "PUT",
-            body,
-        });
-    },
-
-    patch: <T>(path: string, body?: RequestBody): Promise<T> => {
-        return request<T>(path, {
-            method: "PATCH",
-            body,
+            body:
+                body instanceof FormData
+                    ? body
+                    : body !== undefined
+                        ? JSON.stringify(body)
+                        : undefined,
         });
     },
 
