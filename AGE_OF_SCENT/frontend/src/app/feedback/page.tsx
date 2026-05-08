@@ -47,7 +47,7 @@ export default function FeedbackPage() {
     return (
         <PageShell
             title="Feedback"
-            description="Share your AGE OF SCENT experience with the boutique team."
+            description="Share your AGE OF SCENT experience to the admin."
         >
             <div className="grid grid--2 feedback-layout">
                 <section className="card feedback-copy">
